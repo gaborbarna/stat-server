@@ -2,13 +2,11 @@ _ = require 'underscore'
 http = require 'http'
 fs = require 'fs'
 sys = require 'sys'
+os = require 'os'
 exec = (require 'child_process').exec
-hostname = (require 'os').hostname()
 udp = require 'dgram'
-host = 'szalon'
+hostname = (require 'os').hostname()
 iface = 'wlan0'
-
-
 udp_port = 8125
 ip_addr = '10.0.0.100'
 
@@ -36,14 +34,18 @@ every 1, ->
     fs.readFile "/sys/class/net/#{iface}/statistics/#{f}", (err, data) ->
       send_udp [parse_bytes data, f]
 
+every 10, ->
+  send_udp [format_output 'used_mem', os.totalmem() - os.freemem(), 'c']
+
 parse_bytes = (data, f) ->
   bytes = if prev_bytes[f] isnt null then data - prev_bytes[f] else 0
   prev_bytes[f] = data
-  "#{hostname}.#{f}:#{bytes}|ms"
+  format_output f, bytes, 'ms'
 
 send_udp = (datas) ->
   _.each datas, (data) ->
     msg = new Buffer data
+    console.log data
     client = udp.createSocket 'udp4'
     client.send msg, 0, msg.length, udp_port, ip_addr, (err, bytes) ->
       client.close()
@@ -60,14 +62,16 @@ parse_stat = (data) ->
   idle = stats[3]*1
   total = stats[0..3].reduce (t, s) -> t*1 + s*1
   val = calc_load total, idle
-  "#{hostname}.load:#{val}|ms"
+  format_output 'load', val, 'ms'
 
 parse_thermal = (data) ->
   _.map (data.split '\n')[0..-2], (line, i) ->
     val = (line.split ' ')[3]
-    "#{hostname}.therm#{i}:#{val}|ms"
+    format_output "therm#{i}", val, 'ms'
 
 parse_battery = (data) ->
   val = (data.split ' ')[3][0..-3]
-  "#{hostname}.battery:#{val}|g"
+  format_output 'battery', val, 'g'
   
+format_output = (name, value, type) ->
+  "#{hostname}.#{name}:#{value}|#{type}"
